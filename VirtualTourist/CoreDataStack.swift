@@ -129,21 +129,23 @@ extension CoreDataStack {
 extension CoreDataStack {
 
     private func _save() {
-        if !self.context.hasChanges { return }
-        
-        do {
-            print("Saving...")
-            try self.context.save()
-        } catch {
-            fatalError("Error while saving main context: \(error)")
+        if self.context.hasChanges {
+            do {
+                print("Saving...")
+                try self.context.save()
+            } catch {
+                fatalError("Error while saving main context: \(error)")
+            }
         }
         
         self.persistingContext.perform() {
-            do {
-                print("Thread[\(Thread.current)] : Store Saving...")
-                try self.persistingContext.save()
-            } catch {
-                fatalError("Error while saving persisting context: \(error)")
+            if self.persistingContext.hasChanges {
+                do {
+                    print("Thread[\(Thread.current)] : Store Saving...")
+                    try self.persistingContext.save()
+                } catch {
+                    fatalError("Error while saving persisting context: \(error)")
+                }
             }
         }
     }

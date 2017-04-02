@@ -81,11 +81,18 @@ public class Flickr {
             return data.subdata(in: Range(uncheckedBounds: (14, data.count - 1)))
             
         }) { error, json in
+            var error = error
             if error == nil && json!["stat"] as? String != "ok" {
-                callback(Exception.ResponseStatNotOK, json)
-            } else {
-                callback(error, json)
+                error = Exception.ResponseStatNotOK
             }
+            
+            if error != nil {
+                print("Error: \(error) - \(json)")
+            } else {
+                //print("\(json)")
+            }
+            
+            callback(error, json)
         }
     }
     
@@ -99,27 +106,35 @@ public class Flickr {
         )
     }
     
-    func getPhotosByGeo(latitude: Double, longitude: Double, callback: @escaping (Error?, [[String: Any]]?)->Void) {
+    func getPhotosByGeo(latitude: Double, longitude: Double, numPerPage: Int, pageNum: Int, callback: @escaping (Error?, Int, [[String: Any]]?)->Void) {
         callRestApi(
             apiMethod: "flickr.photos.search",
             query: [
                 "lat": latitude,
                 "lon": longitude,
-                "content_type": 1
+                "content_type": 1,
+                "per_page": numPerPage,
+                "page": pageNum
             ]
         ) { error, json in
             var photoList = [[String: Any]]()
+            var total = 0
             if error == nil {
-                if let photos = json!["photos"] as? [String: Any], let _photoList = photos["photo"] as? [[String: Any]] {
+                if let photos = json!["photos"] as? [String: Any],
+                    let _total = photos["total"] as? String,
+                    let _photoList = photos["photo"] as? [[String: Any]]
+                {
                     for p in _photoList {
                         photoList.append([
                             "title" : p["title"] as? String ?? "",
+                            "id": p["id"] as? String ?? "",
                             "url": Flickr.getPhotoUrl(photo: p)
                         ])
                     }
+                    total = Int(_total) ?? 0
                 }
             }
-            callback(error, photoList)
+            callback(error, total, photoList)
         }
     }
     

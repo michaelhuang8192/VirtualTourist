@@ -15,9 +15,13 @@ import CoreData
 class PhotoAlbumViewController: UIViewController {
     @IBOutlet weak var mapView : MKMapView!
     @IBOutlet weak var collectionView: UICollectionView!
+    @IBOutlet weak var newCollection: UIButton!
     
     var pin: Pin!
     var dataStack: CoreDataStack!
+    var pinCommon: PinCommon!
+    var emptyImage = UIImage(named: "loading")
+    var emptyLabel: UILabel!
     
     var fetchedResultsController : NSFetchedResultsController<NSFetchRequestResult>? {
         didSet {
@@ -34,19 +38,14 @@ class PhotoAlbumViewController: UIViewController {
     }
     var _fcChanges = [[Any]]()
     
-    func onCompleted(_ data: Data?, _ ctx: Any) -> Void {
-        let objectId = ctx as! NSManagedObjectID
-        dataStack.performBackgroundBatchOperation { (ctx) in
-            if let photo = ctx.object(with: objectId) as? Photo {
-                photo.image = data as NSData?
-            }
-        }
-    }
-    
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        newCollection.isEnabled = pin.isDownloadCompleted()
+        
         dataStack = (UIApplication.shared.delegate as! AppDelegate).dataStack
+        pinCommon = PinCommon(dataStack: dataStack)
+        
         let fr: NSFetchRequest<NSFetchRequestResult>  = Photo.fetchRequest()
         fr.sortDescriptors = [
             NSSortDescriptor(key: "id", ascending: true)
@@ -74,6 +73,15 @@ class PhotoAlbumViewController: UIViewController {
         annotation.coordinate = coordinate
         mapView.addAnnotation(annotation)
         
+        emptyLabel = UILabel(frame: CGRect(x: 0, y: 0, width:0, height:0))
+        emptyLabel.textAlignment = .center
+        emptyLabel.textColor = UIColor.black
+        emptyLabel.text = "No Photo Yet"
+    }
+    
+    @IBAction func onClickNewCollection(_ sender: Any) {
+        pin.clearPhotos()
+        pinCommon.fetchPhotosForPin(pin: pin, pageNum: 0, numPerPage: 30)
     }
     
     static func pushView(_ callee: UIViewController, pin: Pin) {
@@ -96,19 +104,34 @@ extension PhotoAlbumViewController : UICollectionViewDataSource {
         
         if let imageData = photo.image {
             cell.imageView.image = UIImage(data: imageData as Data)
+            cell.activityIndicator.stopAnimating()
         } else {
-            cell.imageView.image = UIImage(named: "loading")
+            cell.imageView.image = emptyImage
+            if photo.state == Photo.State.Loading.rawValue {
+                cell.activityIndicator.startAnimating()
+            } else {
+                cell.activityIndicator.stopAnimating()
+            }
         }
         
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        
+        var count = 0
         if let fc = fetchedResultsController {
-            return fc.sections![section].numberOfObjects
-        } else {
-            return 0
+            count = fc.sections![section].numberOfObjects
         }
+        
+        if count <= 0 {
+            emptyLabel.frame.size = collectionView.bounds.size
+            collectionView.backgroundView = emptyLabel
+        } else {
+            collectionView.backgroundView = nil
+        }
+        
+        return count
     }
     
     func numberOfSections(in collectionView: UICollectionView) -> Int {
@@ -121,8 +144,17 @@ extension PhotoAlbumViewController : UICollectionViewDataSource {
 }
 
 extension PhotoAlbumViewController : UICollectionViewDelegate {
-    
-    
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath:IndexPath) {
+        let photo = fetchedResultsController!.object(at: indexPath) as! Photo
+        photo.delete()
+    }
+}
+
+extension PhotoAlbumViewController : UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout:UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+        let width = collectionView.bounds.width / 3
+        return CGSize(width: width, height: width)
+    }
 }
 
 extension PhotoAlbumViewController : NSFetchedResultsControllerDelegate {
@@ -175,6 +207,7 @@ extension PhotoAlbumViewController : NSFetchedResultsControllerDelegate {
             
         })
         
+        newCollection.isEnabled = pin.isDownloadCompleted()
     }
     
 }

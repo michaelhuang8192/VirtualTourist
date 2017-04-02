@@ -19,20 +19,37 @@ class MapViewController: UIViewController, CLLocationManagerDelegate, MKMapViewD
     @IBOutlet weak var labelTabPinsToDelete: UILabel!
     
     var dataStack: CoreDataStack!
-    
     var locationManager : CLLocationManager!
+    var pinCommon: PinCommon!
     
     override func viewDidLoad() {
         super.viewDidLoad()
 
         dataStack = (UIApplication.shared.delegate as! AppDelegate).dataStack
         labelTabPinsToDelete.isHidden = true
+        pinCommon = PinCommon(dataStack: dataStack)
         
         let longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(onLongPressOnMap))
         longPressRecognizer.minimumPressDuration = 0.7
         mapView.addGestureRecognizer(longPressRecognizer)
         
-        locateMe()
+        if let regionData = UserDefaults.standard.dictionary(forKey: "regionData") {
+            mapView.setRegion(
+                MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(
+                        latitude: (regionData["latitude"] as! NSNumber).doubleValue,
+                        longitude: (regionData["longitude"] as! NSNumber).doubleValue
+                    ),
+                    span: MKCoordinateSpan(
+                        latitudeDelta: (regionData["latitudeDelta"] as! NSNumber).doubleValue,
+                        longitudeDelta: (regionData["longitudeDelta"] as! NSNumber).doubleValue
+                    )
+                ),
+                animated: true
+            )
+        } else {
+            locateMe()
+        }
         
         loadPins()
     }
@@ -61,13 +78,33 @@ class MapViewController: UIViewController, CLLocationManagerDelegate, MKMapViewD
                 mapView.removeAnnotation(annotation)
                 delPin(pin: pin)
             } else {
-                if pin.state == 0 || pin.state == 1 && pin.stateDate!.timeIntervalSinceNow < -10.0 {
-                    fetchPhotosForPin(pin: pin)
+                if pin.state == Pin.State.Created.rawValue || pin.state == Pin.State.LinksLoading.rawValue && pin.stateDate!.timeIntervalSinceNow < -10.0 {
+                    pinCommon.fetchPhotosForPin(pin: pin, pageNum: 1, numPerPage: 30)
+                    
+                } else if pin.state == Pin.State.LinksLoaded.rawValue {
+                    pinCommon.reloadIncompletedPhotosForPin(pin: pin)
+                    
                 }
                 
                 PhotoAlbumViewController.pushView(self, pin: pin)
             }
         }
+    }
+    
+    func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+        saveRegionData()
+    }
+    
+    func saveRegionData() {
+        let region = mapView.region
+        var regionData = [String: Any]()
+        
+        regionData["latitude"] = NSNumber(value: region.center.latitude)
+        regionData["longitude"] = NSNumber(value: region.center.longitude)
+        regionData["latitudeDelta"] = NSNumber(value: region.span.latitudeDelta)
+        regionData["longitudeDelta"] = NSNumber(value: region.span.longitudeDelta)
+        
+        UserDefaults.standard.set(regionData, forKey: "regionData")
     }
     
     func isOnEdit() -> Bool {
@@ -148,68 +185,19 @@ extension MapViewController {
         pin.latitude = latitude
         pin.longitude = longitude
         pin.createdDate = NSDate()
-        
-        //fetchPhotosForPin(pin: pin)
-        
+
         return pin
     }
     
     func delPin(pin: Pin) {
+        pin.clearPhotos()
+        pin.state = Pin.State.Deleted.rawValue
         dataStack.context.delete(pin)
     }
 }
 
 extension MapViewController {
-    
-    func fetchPhotosForPin(pin: Pin) {
-        pin.state = 1
-        pin.stateDate = NSDate()
-        
-        Flickr.shared.getPhotosByGeo(latitude: pin.latitude, longitude: pin.longitude) { (error, photos) in
-            DispatchQueue.main.async {
-                if error != nil {
-                    pin.state = 0
-                } else {
-                    self.addPhotosForPin(pin: pin, photos: photos!)
-                    pin.state = 2
-                }
-            }
-        }
-    }
-    
-    func addPhotosForPin(pin: Pin, photos: [[String: Any]]) {
-        var urlList = [String]()
-        var ctxList = [Any]()
-        for p in photos {
-            let photo = Photo(context: self.dataStack.context)
-            photo.title = p["title"] as? String
-            photo.url = p["url"] as? String
-            photo.id = p["id"] as? String
-            pin.addToPhotos(photo)
-            
-            urlList.append(photo.url!)
-            ctxList.append(photo.objectID)
-        }
-        
-        if !urlList.isEmpty {
-            PhotoDownloader.shared.download(
-                urlList: urlList,
-                ctxList: ctxList,
-                onComplete: onCompleted
-            )
-            print(">>add download - count:\(urlList.count)")
-        }
-    }
-    
-    func onCompleted(_ data: Data?, _ ctx: Any) -> Void {
-        let objectId = ctx as! NSManagedObjectID
-        dataStack.performBackgroundBatchOperation { (ctx) in
-            if let photo = ctx.object(with: objectId) as? Photo {
-                photo.image = data as NSData?
-            }
-        }
-    }
-    
+
 }
 
 
