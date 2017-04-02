@@ -157,27 +157,22 @@ class MapViewController: UIViewController, CLLocationManagerDelegate, MKMapViewD
 
 extension MapViewController {
     func loadPins() {
-        let asyncRequest = NSAsynchronousFetchRequest(fetchRequest: Pin.fetchRequest()) {
-            result -> Void in
-            if let mapView = self.mapView {
-                mapView.removeAnnotations(mapView.annotations)
-                
-                var annotations = [MKAnnotation]()
-                if let pins = result.finalResult {
-                    for pin in pins {
-                        let annotation = MyMKPointAnnotation(pin: pin)
-                        annotation.coordinate = CLLocationCoordinate2D(
-                            latitude: pin.latitude,
-                            longitude: pin.longitude
-                        )
-                        annotations.append(annotation)
-                    }
-                }
-                mapView.addAnnotations(annotations)
+        let pinList = try! dataStack.context.fetch(Pin.fetchRequest()) as! [Pin]
+        if let mapView = self.mapView {
+            mapView.removeAnnotations(mapView.annotations)
+            
+            var annotations = [MKAnnotation]()
+            for pin in pinList {
+                let annotation = MyMKPointAnnotation(pin: pin)
+                annotation.coordinate = CLLocationCoordinate2D(
+                    latitude: pin.latitude,
+                    longitude: pin.longitude
+                )
+                annotations.append(annotation)
             }
+            mapView.addAnnotations(annotations)
         }
-        
-        try! dataStack.context.execute(asyncRequest)
+
     }
     
     func addPin(latitude: Double, longitude: Double) -> Pin {
